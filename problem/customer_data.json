@@ -1,0 +1,14 @@
+{
+    "users": [
+        {
+            "name": "Pankaj Jarial",
+            "phone": "1234567890",
+            "email": "pankaj@gmail.com",
+            "purchase": {
+                "product": "Voltas AC",
+                "model": "VT-AC123",
+                "purchase_date": "2024-08-15"
+            }
+        }
+    ]
+}
