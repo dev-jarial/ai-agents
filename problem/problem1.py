@@ -26,7 +26,7 @@ customer_data = {
             "purchase": {
                 "product": "Voltas AC",
                 "model": "VT-AC123",
-                "purchase_date": "2023-08-15",
+                "purchase_date": "2024-08-15",
             },
         }
     ]
@@ -132,7 +132,7 @@ def order_tracking_tool(order_id: str):
 
 
 def general_support_tool(query):
-    return llm.predict(
+    return llm.invoke(
         f"Show emotions on the user query, like apologies that you facing this issue or sympathy like emotions and guide them based on the bases of that.\n\nUser: {query}"
     ).content
 
@@ -214,10 +214,10 @@ def customer_support_agent():
             response = agent.invoke(
                 {"input": order_id, "chat_history": memory.load_memory_variables({})}
             )
-        elif query_type == "complaint_support":
+        elif query_type == "general_support":
             response = agent.invoke(
                 {
-                    "input": "Complaint Support",
+                    "input": "General Support",
                     "chat_history": memory.load_memory_variables({}),
                 }
             )
@@ -249,10 +249,13 @@ def customer_support_agent():
                 "issue": issue_desc,
                 "model": model_number,
             }
+            # ✅ Convert dictionary `complaint_data` to a properly formatted string
+            complaint_text = json.dumps(complaint_data, ensure_ascii=False)
 
+            # ✅ Pass the formatted complaint data as a string to `invoke()`
             response = agent.invoke(
                 {
-                    "input": complaint_data,
+                    "input": complaint_text,  # ✅ Fix: Ensure "input" is a string
                     "chat_history": memory.load_memory_variables({}),
                 }
             )
@@ -268,11 +271,13 @@ def customer_support_agent():
 
         print("\n🤖", response)
 
-        # ✅ Convert response to a string before saving in memory
-        response_text = (
-            response.get("output") if isinstance(response, dict) else str(response)
-        )
-        memory.save_context({"input": user_query}, {"output": response_text})
+        # ✅ Extract only the "output" key if response is a dictionary
+        if isinstance(response, dict):
+            response_text = response.get("output", "No response available.")
+        else:
+            response_text = str(response)
+
+        memory.save_context({"input": str(user_query)}, {"output": response_text})
 
 
 # ✅ Run AI Agent
