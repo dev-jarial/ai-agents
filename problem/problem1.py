@@ -51,6 +51,7 @@ order_tracking_data = {
 
 # ✅ AI Model
 llm = ChatOpenAI(model_name="gpt-4o-mini", openai_api_key=OPENAI_API_KEY)
+
 # ✅ Initialize Memory for Chat History
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
@@ -68,7 +69,7 @@ def extract_contact_info(user_input):
     return phone, email
 
 
-# ✅ Function: Verify User
+# ✅ Function: Verify User (no changes needed)
 def verify_user(phone=None, email=None):
     for user in customer_data["users"]:
         if (phone and user["phone"] == phone) or (email and user["email"] == email):
@@ -88,28 +89,57 @@ def check_warranty(purchase_date):
 def track_order(order_id):
     if order_id in order_tracking_data:
         order = order_tracking_data[order_id]
-        return f"📦 Order Status: {order['status']}\n🚚 Expected Delivery: {order['expected_delivery']}\n📍 Last Location: {order['last_location']}"
+        return (
+            f"📦 Order Status: {order['status']}\n"
+            f"🚚 Expected Delivery: {order['expected_delivery']}\n"
+            f"📍 Last Location: {order['last_location']}"
+        )
     return "❌ Order not found. Please check the tracking ID."
 
 
-# ✅ Function: Register Complaint & Generate Ticket
-def register_complaint(phone=None, email=None, issue=None, model=None):
-    print(f"{phone= }, {email= }, {issue= }, {model= }")
-    user = verify_user(phone, email)
+# This counter tracks failed user verification attempts
+fail_count = 0
 
+
+# ✅ Complaint Registration (requires phone OR email)
+def register_complaint(phone=None, email=None, issue=None, model=None):
+    global fail_count
+
+    user = verify_user(phone, email)
     if user:
+        # Reset fail_count because user is verified successfully
+        fail_count = 0
+
+        # Now proceed with the rest of your logic
         if model and model != user["purchase"]["model"]:
             return "❌ Model number mismatch. Please check your product details."
 
         if check_warranty(user["purchase"]["purchase_date"]):
             ticket_id = f"TICKET-{random.randint(100000, 999999)}"
-            return f"Complaint registered successfully! Your ticket ID is {ticket_id}."
+            return (
+                f"I’m really sorry you’re experiencing issues with your AC. "
+                f"Your complaint is registered successfully! Your ticket ID is **{ticket_id}**."
+            )
         else:
-            return f"❌ Warranty expired. Contact support at {SUPPORT_NUMBER}."
-    return "User verification failed."
+            return f"❌ Warranty expired. Please contact support at {SUPPORT_NUMBER}."
+    else:
+        # If user verification fails, increment the counter
+        fail_count += 1
+
+        # If user has failed 3 times, provide the support contact
+        if fail_count >= 3:
+            return (
+                f"❌ We couldn’t verify your account after multiple attempts. "
+                f"Please contact our support at {SUPPORT_NUMBER}."
+            )
+
+        return (
+            "❌ User verification failed. Please check your phone/email and try again. "
+            "If you need help, reach out to customer support."
+        )
 
 
-# ✅ AI-Based Query Processor (Ensure it always returns a valid response)
+# ✅ AI-Based Query Processor (simple intent classifier)
 def ai_query_processor(query):
     response = llm.invoke(
         f"Analyze the user request and classify it. User said: {query}. "
@@ -126,40 +156,63 @@ def ai_query_processor(query):
     return response if response in valid_intents else "need_assistance"
 
 
-# ✅ AI Tool: Handle Order Tracking
+# ✅ Tools
 def order_tracking_tool(order_id: str):
     return track_order(order_id)
 
 
 def general_support_tool(query):
-    return llm.invoke(
-        f"Show emotions on the user query, like apologies that you facing this issue or sympathy like emotions and guide them based on the bases of that.\n\nUser: {query}"
-    ).content
+    """
+    Show empathy and provide guidance or reassurance.
+    """
+    empathy_prompt = (
+        "You are a helpful and empathetic customer support agent for Voltas AC. "
+        "The user may be frustrated or upset, so show sympathy and understanding. "
+        "Acknowledge their feelings and provide clear guidance or next steps.\n\n"
+        f"User: {query}\n\n"
+        "Please respond with a warm, empathetic tone."
+    )
+    return llm.invoke(empathy_prompt).content
 
 
-# ✅ AI Tool: Handle Complaint Registration
 def complaint_tool(input_data: dict):
     """
     Extracts phone, email, issue, and model from input_data correctly
     and calls register_complaint function.
+
+    Note: We only need phone OR email, not both.
     """
     input_data = json.loads(input_data)
+
     phone = input_data.get("phone")
     email = input_data.get("email")
     issue = input_data.get("issue")
     model = input_data.get("model")
 
-    if not phone or not email or not issue or not model:
-        return "❌ Missing required details. Please provide phone, email, model, and issue description."
+    # Require at least phone or email
+    if not phone and not email:
+        return (
+            "❌ Missing contact details. Please provide at least phone OR email, "
+            "along with model and a short description of your issue."
+        )
+
+    if not issue or not model:
+        return (
+            "❌ Missing required details. Please provide model and issue description."
+        )
 
     return register_complaint(phone, email, issue, model)
 
 
-# ✅ AI Tool: Assistance
 def need_assistance_tool(query: str):
-    return llm.invoke(
-        f"Greet the customer and inform them that you are here to assist with Voltas AC support.\n\nUser: {query}"
-    ).content
+    empathy_prompt = (
+        "You are a helpful and empathetic customer support agent for Voltas AC. "
+        "The user wants assistance or has a question. Show warmth, understanding, "
+        "and readiness to help.\n\n"
+        f"User: {query}\n\n"
+        "Please respond with an empathetic greeting and offer your assistance."
+    )
+    return llm.invoke(empathy_prompt).content
 
 
 # ✅ Define AI Agent Tools
@@ -169,8 +222,8 @@ tools = [
     ),
     Tool(
         name="RegisterComplaint",
-        func=complaint_tool,  # Correct function reference
-        description="Register an AC complaint. Requires 'phone', 'email', 'issue', and 'model'.",
+        func=complaint_tool,
+        description="Register an AC complaint. Requires 'phone' or 'email', plus 'issue' and 'model'.",
     ),
     Tool(
         name="GeneralSupport",
@@ -189,7 +242,7 @@ agent = initialize_agent(
     tools=tools,
     llm=llm,
     agent=AgentType.OPENAI_FUNCTIONS,
-    memory=memory,  # Attach memory here
+    memory=memory,  # Attach memory
     verbose=True,
 )
 
@@ -200,84 +253,14 @@ def customer_support_agent():
     while True:
         user_query = input("\nYou: ").strip()
 
-        # ✅ If User Wants to Exit, Stop the Conversation
-        if user_query.lower() in ["no thanks", "ok thanks", "not now"]:
+        # End conversation if user wishes
+        if user_query.lower() in ["no thanks", "ok thanks", "not now", "bye", "exit"]:
             print("\n🤖 Thank you for reaching out. Have a great day!")
             break
 
-        # ✅ AI Identifies Intent While Remembering Chat History
-        query_type = ai_query_processor(user_query)
-
-        # ✅ Track Order
-        if query_type == "track_order":
-            order_id = input("\n📦 Please enter your Order Tracking ID: ")
-            response = agent.invoke(
-                {"input": order_id, "chat_history": memory.load_memory_variables({})}
-            )
-        elif query_type == "general_support":
-            response = agent.invoke(
-                {
-                    "input": "General Support",
-                    "chat_history": memory.load_memory_variables({}),
-                }
-            )
-
-        # ✅ Complaint Registration
-        elif query_type == "register_complaint":
-            phone, email = extract_contact_info(user_query)
-
-            # ✅ Ask for missing details
-            if not phone or not email:
-                print(
-                    "\n🤖 Can you please provide your registered mobile number and/or email?"
-                )
-                additional_input = input("\nYou: ")
-                new_phone, new_email = extract_contact_info(additional_input)
-                phone = phone or new_phone
-                email = email or new_email
-
-            print("\n🤖 Please provide your AC model number.")
-            model_number = input("\nYou: ").strip()
-
-            print("\n🔧 Describe the issue with your AC.")
-            issue_desc = input("\nYou: ").strip()
-
-            # ✅ Register Complaint (Ensure Proper Argument Passing)
-            complaint_data = {
-                "phone": phone if phone else "Unknown",
-                "email": email if email else "Unknown",
-                "issue": issue_desc,
-                "model": model_number,
-            }
-            # ✅ Convert dictionary `complaint_data` to a properly formatted string
-            complaint_text = json.dumps(complaint_data, ensure_ascii=False)
-
-            # ✅ Pass the formatted complaint data as a string to `invoke()`
-            response = agent.invoke(
-                {
-                    "input": complaint_text,  # ✅ Fix: Ensure "input" is a string
-                    "chat_history": memory.load_memory_variables({}),
-                }
-            )
-
-        # ✅ General Assistance
-        elif query_type == "need_assistance":
-            response = agent.invoke(
-                {
-                    "input": "Need Assistance",
-                    "chat_history": memory.load_memory_variables({}),
-                }
-            )
-
+        # Hand the entire user query to the agent
+        response = agent.run(user_query)
         print("\n🤖", response)
-
-        # ✅ Extract only the "output" key if response is a dictionary
-        if isinstance(response, dict):
-            response_text = response.get("output", "No response available.")
-        else:
-            response_text = str(response)
-
-        memory.save_context({"input": str(user_query)}, {"output": response_text})
 
 
 # ✅ Run AI Agent
