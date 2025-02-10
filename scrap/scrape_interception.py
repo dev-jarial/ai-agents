@@ -1,9 +1,11 @@
+import concurrent.futures
 import json
+import threading
 
 import requests
 from bs4 import BeautifulSoup
 
-# Define your lists
+# Define the lists of values
 solution_categories = [
     "Analytics",
     "Application Development",
@@ -57,11 +59,14 @@ oems = [
     "Others",
 ]
 
+# A lock to synchronize printing from multiple threads.
+print_lock = threading.Lock()
+
 
 def parse_product_list(html_content):
     """
-    Uses BeautifulSoup to parse the HTML snippet in the 'product_list' field
-    and returns the cleaned text.
+    Uses BeautifulSoup to parse the HTML snippet in the 'product_list'
+    field and returns the cleaned text.
     """
     soup = BeautifulSoup(html_content, "html.parser")
     return soup.get_text(separator="\n", strip=True)
@@ -70,7 +75,7 @@ def parse_product_list(html_content):
 def get_api_data(page, location, category, oem):
     """
     Sends a POST request to the API endpoint for the given page number and parameters.
-    Returns the parsed JSON response (if successful) or None on error.
+    Returns the parsed JSON response if successful or None if an error occurs.
     """
     url = f"https://p2pconnect.in/Home/fetch_data/{page}"
     payload = {
@@ -84,66 +89,97 @@ def get_api_data(page, location, category, oem):
     try:
         response = requests.post(url, data=payload, headers=headers)
     except Exception as e:
-        print(f"Request error on page {page} for {category} | {location} | {oem}: {e}")
+        with print_lock:
+            print(
+                f"Request error on page {page} for {category} | {location} | {oem}: {e}"
+            )
         return None
 
     if response.status_code == 200:
         try:
             return response.json()
         except json.JSONDecodeError as e:
-            print(
-                f"JSON decode error on page {page} for {category} | {location} | {oem}: {e}"
-            )
+            with print_lock:
+                print(
+                    f"JSON decode error on page {page} for {category} | {location} | {oem}: {e}"
+                )
             return None
     else:
-        print(
-            f"Request failed on page {page} for {category} | {location} | {oem}. Status code: {response.status_code}"
-        )
+        with print_lock:
+            print(
+                f"Request failed on page {page} for {category} | {location} | {oem}. Status code: {response.status_code}"
+            )
         return None
 
 
-def scrape_api():
+def process_combination(category, location, oem):
     """
-    Iterates through all solution categories, countries, and OEMs.
-    For each combination, it scrapes all paginated API results,
-    parses the content, and prints it.
+    For a given combination of solution category, location, and OEM,
+    iterates through all paginated results, scrapes and prints the extracted content.
     """
-    for category in solution_categories:
-        for location in countries:
-            for oem in oems:
-                print("\n==============================================")
-                print(f"Scraping for Category: {category}")
-                print(f"Location: {location}")
-                print(f"OEM: {oem}")
-                print("==============================================\n")
-                page = 1
-                while True:
-                    print(f"--- Page {page} ---")
-                    data = get_api_data(page, location, category, oem)
-                    if not data:
-                        print(
-                            "No data returned or error occurred; moving to next combination.\n"
-                        )
-                        break
+    page = 1
+    results = []  # You can optionally collect the results here.
+    while True:
+        data = get_api_data(page, location, category, oem)
+        if not data:
+            with print_lock:
+                print(
+                    f"[{category} | {location} | {oem}] No data returned or error on page {page}. Moving on."
+                )
+            break
 
-                    # Extract and parse the product_list HTML
-                    product_html = data.get("product_list", "")
-                    if product_html:
-                        product_text = parse_product_list(product_html)
-                        print(f"Content on Page {page}:\n{product_text}\n")
-                    else:
-                        print(f"No product content found on page {page}.\n")
+        product_html = data.get("product_list", "")
+        if product_html:
+            product_text = parse_product_list(product_html)
+            with print_lock:
+                print(f"\n=== {category} | {location} | {oem} | Page {page} ===")
+                print(product_text)
+            results.append(product_text)
+        else:
+            with print_lock:
+                print(
+                    f"[{category} | {location} | {oem}] No product content found on page {page}."
+                )
 
-                    # Check if a "next" link exists in the pagination HTML
-                    pagination_html = data.get("pagination_link", "")
-                    if 'rel="next"' in pagination_html:
-                        page += 1
-                    else:
-                        print(
-                            "No next page found. Finished pagination for this combination.\n"
-                        )
-                        break
+        # Check if there is a "next" page using the pagination HTML
+        pagination_html = data.get("pagination_link", "")
+        if 'rel="next"' in pagination_html:
+            page += 1
+        else:
+            with print_lock:
+                print(f"[{category} | {location} | {oem}] Finished pagination.")
+            break
+    return results
+
+
+def main():
+    # Build all combinations of (solution_category, country, oem)
+    combinations = [
+        (category, country, oem)
+        for category in solution_categories
+        for country in countries
+        for oem in oems
+    ]
+
+    # Adjust max_workers based on your system and network bandwidth.
+    max_workers = 10
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit a task for each combination
+        future_to_combo = {
+            executor.submit(process_combination, cat, loc, oem): (cat, loc, oem)
+            for (cat, loc, oem) in combinations
+        }
+
+        # Process results as tasks complete.
+        for future in concurrent.futures.as_completed(future_to_combo):
+            combo = future_to_combo[future]
+            try:
+                # Each future returns the list of results (if needed)
+                _ = future.result()
+            except Exception as exc:
+                with print_lock:
+                    print(f"Combination {combo} generated an exception: {exc}")
 
 
 if __name__ == "__main__":
-    scrape_api()
+    main()
