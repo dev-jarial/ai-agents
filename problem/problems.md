@@ -52,23 +52,47 @@ check cases:
 
 
 
-Problem: 2
+### Problem: 2
 
 
-suggestions an AC for a room, recently married.
+    suggestions an AC for a room, recently married.
+    ## {emotion intenlligence}
+    ## {area for looking}-> use intel to understand AC requirement as area suggest.
+    ## {push for best suit case}
+    {accept user decision}
+    {recomendation based on the user requirements}
+    {discount and promotional suggestion}
+    {send information to email}
 
-Would you like to help me to find out the best model.
+    Would you like to help me to find out the best model.
 
-L*W = 30"40"
+    {
+        L*W = 30"40"
 
-promotion available.
-split AC or window AC or both?
+        promotion available.
+        split AC or window AC or both?
 
 
-If selection is done:
-check fall back message: discount or recommendation.
+        If selection is done:
+        check fall back message: discount or recommendation.
+    }
 
 Problem: 3
+
+    50 customer emails. -> send email
+                        
+                        if not response
+                            follow up email
+                        
+                        else:
+
+                            if positive
+                                schedule meeting, choose the slot from calender. -> meeting link -> ai note taker which take the note of both parties.
+
+                                reminder before 24 hours and reminder before 8 hours and also before 30 mins.
+                                if not available:
+                                    reschedule the meeting.
+
 
 lead generation.
 
