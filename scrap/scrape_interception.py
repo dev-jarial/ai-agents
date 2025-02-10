@@ -1,89 +1,149 @@
-import hashlib
-import time
+import json
 
+import requests
 from bs4 import BeautifulSoup
-from playwright.sync_api import sync_playwright
+
+# Define your lists
+solution_categories = [
+    "Analytics",
+    "Application Development",
+    "Artificial Intelligence",
+    "Cloud",
+    "CRM",
+    "ERP",
+    "Finance",
+    "HRMS",
+    "IT Security Services",
+    "Sales & Marketing",
+    "Software Licenses",
+    "Supply Chain",
+    "Others",
+]
+
+countries = [
+    "Australia",
+    "Canada",
+    "India",
+    "Israel",
+    "Kenya",
+    "Malaysia",
+    "Mexico",
+    "Nigeria",
+    "South Africa",
+    "Sri Lanka",
+    "United Arab Emirates",
+    "United Kingdom",
+    "United States of America",
+]
+
+oems = [
+    "Adobe",
+    "AWS",
+    "Crowd Strike",
+    "Freshworks",
+    "Google",
+    "IBM",
+    "Intuit",
+    "Microsoft",
+    "Oracle",
+    "Quickbooks",
+    "Redhat",
+    "Sales Force",
+    "SAP",
+    "Tableau",
+    "Tally",
+    "VMware",
+    "Zoho",
+    "Others",
+]
 
 
-def clean_text_per_line(text):
+def parse_product_list(html_content):
     """
-    Cleans text on a per‑line basis:
-      - Splits the text into lines.
-      - Strips leading/trailing whitespace from each line.
-      - Discards empty lines.
-    Returns the joined lines.
+    Uses BeautifulSoup to parse the HTML snippet in the 'product_list' field
+    and returns the cleaned text.
     """
-    lines = text.splitlines()
-    cleaned_lines = [line.strip() for line in lines if line.strip()]
-    return "\n".join(cleaned_lines)
-
-
-def scrape_page_content(page):
-    """
-    Gets the HTML content of the current page, parses it with BeautifulSoup,
-    extracts the visible text, and cleans it.
-    """
-    html_content = page.content()
     soup = BeautifulSoup(html_content, "html.parser")
-    text = soup.get_text(separator="\n", strip=True)
-    return clean_text_per_line(text)
+    return soup.get_text(separator="\n", strip=True)
 
 
-def get_page_hash(page):
+def get_api_data(page, location, category, oem):
     """
-    Returns a SHA-256 hash of the current page's HTML content.
-    This is used to detect if the page content has changed.
+    Sends a POST request to the API endpoint for the given page number and parameters.
+    Returns the parsed JSON response (if successful) or None on error.
     """
-    html_content = page.content()
-    return hashlib.sha256(html_content.encode("utf-8")).hexdigest()
+    url = f"https://p2pconnect.in/Home/fetch_data/{page}"
+    payload = {
+        "action": "fetch_data",
+        "location[]": location,
+        "category[]": category,
+        "oem[]": oem,
+    }
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
+    try:
+        response = requests.post(url, data=payload, headers=headers)
+    except Exception as e:
+        print(f"Request error on page {page} for {category} | {location} | {oem}: {e}")
+        return None
 
-def main():
-    with sync_playwright() as p:
-        # Launch Chromium in headful mode so you can manually navigate.
-        browser = p.chromium.launch(headless=False)
-        context = browser.new_context()
-        page = context.new_page()
-
-        start_url = input("Enter the URL to scrape: ").strip()
-        page.goto(start_url)
-        page.wait_for_load_state("networkidle")
-
-        # Set to keep track of page content hashes already scraped.
-        scraped_hashes = set()
-        last_hash = None
-
-        print("\nNow monitoring the page for content changes.")
-        print(
-            "You can manually navigate or click on pagination links in the browser window."
-        )
-        print(
-            "Any new content will be scraped and printed below. Press Ctrl+C to exit.\n"
-        )
-
+    if response.status_code == 200:
         try:
-            while True:
-                # Wait briefly before checking for changes.
-                time.sleep(2)
-                current_hash = get_page_hash(page)
-                # If the page content has changed compared to last check
-                if current_hash != last_hash:
-                    # And if we haven't already scraped this version:
-                    if current_hash not in scraped_hashes:
+            return response.json()
+        except json.JSONDecodeError as e:
+            print(
+                f"JSON decode error on page {page} for {category} | {location} | {oem}: {e}"
+            )
+            return None
+    else:
+        print(
+            f"Request failed on page {page} for {category} | {location} | {oem}. Status code: {response.status_code}"
+        )
+        return None
+
+
+def scrape_api():
+    """
+    Iterates through all solution categories, countries, and OEMs.
+    For each combination, it scrapes all paginated API results,
+    parses the content, and prints it.
+    """
+    for category in solution_categories:
+        for location in countries:
+            for oem in oems:
+                print("\n==============================================")
+                print(f"Scraping for Category: {category}")
+                print(f"Location: {location}")
+                print(f"OEM: {oem}")
+                print("==============================================\n")
+                page = 1
+                while True:
+                    print(f"--- Page {page} ---")
+                    data = get_api_data(page, location, category, oem)
+                    if not data:
                         print(
-                            "\n--- New Content Detected at URL: {} ---".format(page.url)
+                            "No data returned or error occurred; moving to next combination.\n"
                         )
-                        content = scrape_page_content(page)
-                        print(content)
-                        scraped_hashes.add(current_hash)
+                        break
+
+                    # Extract and parse the product_list HTML
+                    product_html = data.get("product_list", "")
+                    if product_html:
+                        product_text = parse_product_list(product_html)
+                        print(f"Content on Page {page}:\n{product_text}\n")
                     else:
-                        print("\nContent already scraped, skipping...")
-                    last_hash = current_hash
-        except KeyboardInterrupt:
-            print("\nExiting...")
-        finally:
-            browser.close()
+                        print(f"No product content found on page {page}.\n")
+
+                    # Check if a "next" link exists in the pagination HTML
+                    pagination_html = data.get("pagination_link", "")
+                    if 'rel="next"' in pagination_html:
+                        page += 1
+                    else:
+                        print(
+                            "No next page found. Finished pagination for this combination.\n"
+                        )
+                        break
 
 
 if __name__ == "__main__":
-    main()
+    scrape_api()
