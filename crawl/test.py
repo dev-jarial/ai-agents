@@ -36,8 +36,8 @@ class CompanyDetails(BaseModel):
     google_rating: int
 
 
-async def main():
-    browser_conf = BrowserConfig(headless=False)  # or False to see the browser
+async def fetch_company_details():
+    browser_conf = BrowserConfig(headless=True)  # or True to not see the browser
     run_conf = CrawlerRunConfig(cache_mode=CacheMode.BYPASS)
 
     async with AsyncWebCrawler(config=browser_conf) as crawler:
@@ -59,7 +59,7 @@ async def main():
                         locations_offices: (List of strings - list of office locations)
                         categories: (List of strings - business categories)
                         products: (List of strings - list of products offered by the company)
-                        industry_types: (List of strings - list of industries the company operates in like e.g.: IT and networking, health care, education etc.)
+                        industry_types: (List of strings - list of industries the company operates in like e.g: Internet and Technology, Health care, Education etc.)
                         number_of_years: (Integer - how many years the company has been in operation)
                         number_of_customers: (Integer - number of customers the company serves)
                         number_of_employees: (Integer - number of employees working in the company)
@@ -79,12 +79,27 @@ async def main():
         ],
         response_format=CompanyDetails,
     )
-    print(completion.choices[0])
+
+    # Return the parsed response
     event = completion.choices[0].message.parsed
-    event_dict = event.model_dump()
-    event_dict_json = json.dumps(event_dict)
-    print(event_dict_json)
+    return event
+
+
+async def main():
+    # Get the company details by calling the async function
+    company_details = await fetch_company_details()
+
+    # Convert company details to JSON format
+    company_details_dict = (
+        company_details.model_dump()
+    )  # Convert Pydantic model to dictionary
+    company_details_json = json.dumps(
+        company_details_dict, indent=4
+    )  # Convert dictionary to JSON
+
+    return company_details_json
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    result = asyncio.run(main())  # Run the async function and capture the result
+    print(result)  # Print the final JSON result
